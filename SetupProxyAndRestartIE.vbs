@@ -46,7 +46,7 @@ If userOkToContinue=vbYes Then
         objShell.RegWrite RegLocate,"localhost;<local>","REG_SZ"
         'MsgBox "Proxy is Enabled"
 
-        restartIe = MsgBox("Kill all internet explorers and start dori?",52,"Start DORI Portal")
+        restartIe = MsgBox("Kill all internet explorers and start IE?",52,"Start IE")
 
         If restartIe=vbYes Then
             call restartInternetExplorer(vbNo)
