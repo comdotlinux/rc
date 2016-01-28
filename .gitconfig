@@ -1,0 +1,22 @@
+[gui]
+	recentrepo = C:/Users/Public/Documents/GIT/ReactJS
+[credential]
+	helper = manager
+[user]
+	name = Guruprasad Kulkarni
+	email = guru@linux.com
+[core]
+	editor = vim
+	autocrlf = false
+[push]
+	default = simple
+[fetch]
+	prune = true
+[alias]
+	lg = log --graph --oneline --decorate
+	lga = log --graph --oneline --decorate --all
+	a = add .
+	cm = commit -m
+	p = push
+	c = commit
+	s = status
