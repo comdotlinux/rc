@@ -1,82 +1,96 @@
 Option Explicit
 
-Const proxyIpPort = "1.2.3.4:0000"
-Const urlToOpen = "http://www.google.com/"
+Const PROXY_IP_PORT = "1.2.3.4:0000"
+Const OPEN_AFTER_ENABLING_PROXY = "http://www.google.com/"
+Const PROXY_OVERRIDE = "localhost;google.com;<local>"
+
+Const ENABLE_DEBUG_MESSAGES = 0
+Const COMPUTER = "."
+
+Const PROXY_IP_REGISTRY_PATH = "HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Internet Settings\ProxyServer"
+Const PROXY_ENABLE_REGISTRY_PATH = "HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Internet Settings\ProxyEnable"
+Const PROXY_OVERRIDE_REGISTRY_PATH = "HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Internet Settings\ProxyOverride"
 
 Dim valUserIn, restartIe, quit, userOkToContinue
 Dim objShell, RegLocate, objWMIService
 Dim strComputer, colProcesses, IE, ieInstance, chkIeProcessList
-Set objShell = WScript.CreateObject("WScript.Shell")
 
-strComputer = "."
-Set objWMIService = GetObject("winmgmts:\\" & strComputer & "\root\cimv2")
-    
-'On Error Resume Next
+
+Function echo(logValue)
+	IF ENABLE_DEBUG_MESSAGES = 1 Then
+		WScript.Echo logValue
+	End If
+End Function
+
+Function getListOfProcessIntances(processName)
+	Set objWMIService = GetObject("winmgmts:\\" & COMPUTER & "\root\cimv2")
+	Set getListOfProcessIntances = objWMIService.ExecQuery ("Select * from Win32_Process Where Name = '" + processName + "'")
+End Function
 
 Function killAllIes()
-    Set colProcesses = objWMIService.ExecQuery ("Select * from Win32_Process Where Name = 'iexplore.exe'")
+	Set colProcesses = getListOfProcessIntances("iexplore.exe")
 	For Each ieInstance In colProcesses
-		WScript.Echo "Killing Internet Explorer instances"
-		set chkIeProcessList = objWMIService.ExecQuery ("Select * from Win32_Process Where Name = 'iexplore.exe'")
+		echo("Killing Internet Explorer instances")
+		Set chkIeProcessList = getListOfProcessIntances("iexplore.exe")
 		If chkIeProcessList.Count > 0 Then
 			ieInstance.Terminate()
 		End If
 		Wscript.Sleep 1000
+		Set colProcesses = getListOfProcessIntances("iexplore.exe")
 	Next
 End Function
 
-Function startIEUsingWscript()
-	'MsgBox("Starting Internet Explorer instance")
+Function startIe()
+	echo("Starting Internet Explorer instance")
 	Set IE = WScript.CreateObject("InternetExplorer.Application")
 	'IE.WindowState = wdWindowStateMaximize
 	IE.visible=true
 	'objShell.SendKeys "% X"
-	Set startIEUsingWscript = IE
+	Set startIe = IE
 End Function
 
 Function restartInternetExplorer(quit)
-	WScript.Echo quit
+	echo("restart Internet explorer with parameter as " & quit)
 	If quit=vbYes Then
-		WScript.Echo "Inside If restartInternetExplorer"
-		Set IE = startIEUsingWscript
+		echo("Inside If restartInternetExplorer")
+		Set IE = startIe()
 		IE.Quit
 		call killAllIes()
+		Set IE = startIe()
 	else
-		WScript.Echo "Inside else restartInternetExplorer"
-		WScript.Echo "Before killing IE"
+		echo("Inside else restartInternetExplorer")
+		echo("Before killing IE")
 		call killAllIes()
-		WScript.Echo "After killing IE"
-		Set IE = startIEUsingWscript
-		IE.navigate doriPortalUrl
+		echo("After killing IE")
+		Set IE = startIe()
+		IE.navigate OPEN_AFTER_ENABLING_PROXY
 	End If
 End Function
 
-'userOkToContinue = MsgBox("Running this program may close all your Internet Explorer instances!!!",52,"You have been warned!")
-userOkToContinue=vbYes
-If userOkToContinue=vbYes Then
-    
-	valUserIn = MsgBox("Use Proxy?",4,"Proxy")
+Function updateRegistry(regLocation, regValue, regValueType)
+	echo("Updating registry at " + regLocation + " with value " + regValue + " of Type " + regValueType)
+	Set objShell = WScript.CreateObject("WScript.Shell")
+	objShell.RegWrite regLocation, regValue, regValueType
+End Function
 
-	If valUserIn=vbYes Then
-		RegLocate = "HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Internet Settings\ProxyServer"
-		objShell.RegWrite RegLocate,proxyIpPort,"REG_SZ"
-		RegLocate = "HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Internet Settings\ProxyEnable"
-		objShell.RegWrite RegLocate,"1","REG_DWORD"
-		RegLocate = "HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Internet Settings\ProxyOverride"
-		objShell.RegWrite RegLocate,_
-		"localhost;*.google.*;<local>","REG_SZ"
-		'MsgBox "Proxy is Enabled"
 
-		'restartIe = MsgBox("Kill all internet explorers and start URL?",52,"Start IE")
-		'call restartInternetExplorer(vbYes)
-		call restartInternetExplorer(vbNo)
-	else
-		RegLocate = "HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Internet Settings\ProxyEnable"
-		objShell.RegWrite RegLocate,"0","REG_DWORD"
-		'MsgBox "Proxy is Disabled"
-		'restartIe = MsgBox("Restart internet explorer for the proxy to take effect? (All instances of IE will be killed!)",52,"Restart IE")
-		call restartInternetExplorer(vbYes)
-	End If
+' Start of script execution ::
+valUserIn = MsgBox("Use the proxy settings and open " + OPEN_AFTER_ENABLING_PROXY  + "?",4,"USE PROXY")
 
+If valUserIn=vbYes Then
+	call updateRegistry(PROXY_IP_REGISTRY_PATH, PROXY_IP_PORT, "REG_SZ")
+	call updateRegistry(PROXY_ENABLE_REGISTRY_PATH, "1", "REG_DWORD")
+	call updateRegistry(PROXY_OVERRIDE_REGISTRY_PATH, PROXY_OVERRIDE, "REG_SZ")
+	echo("Proxy is Enabled")
+
+	'restartIe = MsgBox("Kill all internet explorers and start " + OPEN_AFTER_ENABLING_PROXY + " ?",52,"Start Internet Explorer")
+	'call restartInternetExplorer(restartIe)
+	call restartInternetExplorer(vbNo)
+else
+	call updateRegistry(PROXY_ENABLE_REGISTRY_PATH, "0", "REG_DWORD")
+	echo("Proxy is Disabled")
+	'restartIe = MsgBox("Restart internet explorer for the proxy disabling to take effect? (All instances of IE will be killed!)",52,"Restart IE")
+	call restartInternetExplorer(vbYes)
 End If
+
 WScript.Quit
