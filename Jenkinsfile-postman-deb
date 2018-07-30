@@ -1,0 +1,162 @@
+def debBuildScript = '''
+#!/bin/sh
+
+if [ -d "Postman" ]; then
+	echo "Removing old 'Postman/'"
+	rm -rf "Postman/"
+fi
+
+echo "Extracting Postman tarball"
+tar -xf $(ls Postman*.tar.gz) || ( echo "Failed to extract Postman tarball" && exit )
+
+versionMaj=$(ls Postman*.tar.gz | awk -F '-' '{ print $4 }' | awk -F '.' '{ print $1 }')
+versionMin=$(ls Postman*.tar.gz | awk -F '-' '{ print $4 }' | awk -F '.' '{ print $2 }')
+versionRev=$(ls Postman*.tar.gz | awk -F '-' '{ print $4 }' | awk -F '.' '{ print $3 }')
+version="${versionMaj}.${versionMin}.${versionRev}"
+
+echo "Postman V${version}"
+packageName="postman-${version}"
+echo "${version}" > ./version.txt
+
+if [ -d "${packageName}" ]; then
+	echo "Removing old '${packageName}/'"
+	rm -rf "${packageName}/"
+fi
+
+echo "Creating ${packageName} folder structure and files"
+mkdir -pv "${packageName}"
+mkdir -pv "${packageName}/usr/share/applications"
+touch "${packageName}/usr/share/applications/Postman.desktop"
+
+mkdir -pv "${packageName}/usr/share/icons/hicolor/128x128/apps"
+mkdir -pv "${packageName}/opt/postman"
+mkdir -pv "${packageName}/DEBIAN"
+touch "${packageName}/DEBIAN/control" "${packageName}/DEBIAN/postinst" "${packageName}/DEBIAN/prerm"
+
+echo "Copying files"
+cp "Postman/app/resources/app/assets/icon.png" "${packageName}/usr/share/icons/hicolor/128x128/apps/postman.png"
+cp -R "Postman/"* "${packageName}/opt/postman/"
+
+echo "Writing files"
+echo "[Desktop Entry]\nType=Application\nName=Postman\nGenericName=Postman API Tester\nIcon=postman\nExec=postman\nPath=/opt/postman\nCategories=Development;" > "${packageName}/usr/share/applications/Postman.desktop"
+echo "Package: Postman\nVersion: ${version}\nSection: devel\nPriority: optional\nArchitecture: amd64\nDepends: \nMaintainer: You\nDescription: Postman\n API something" > "${packageName}/DEBIAN/control"
+echo "if [ -f \"/usr/bin/postman\" ]; then\n\tsudo rm -f \"/usr/bin/postman\"\nfi\n\nsudo ln -s \"/opt/postman/Postman\" \"/usr/bin/postman\"" > "${packageName}/DEBIAN/postinst"
+echo "if [ -f \"/usr/bin/postman\" ]; then\n\tsudo rm -f \"/usr/bin/postman\"\nfi" > "${packageName}/DEBIAN/prerm"
+
+echo "Setting modes"
+chmod 0775 "${packageName}/DEBIAN/postinst"
+chmod 0775 "${packageName}/DEBIAN/prerm"
+
+echo "Building '${packageName}.deb'"
+dpkg-deb -b "${packageName}" > /dev/null
+
+if [ $? -gt 0 ]; then
+	echo "Failed to build '${packageName}.deb'"
+	exit
+fi
+
+'''
+
+def downloadScript = '''
+#!/bin/sh
+echo "Downloading latest Postman tarball"
+rm -f Postman*.tar.gz || true
+curl "https://dl.pstmn.io/download/latest/linux64" -O -J
+
+if [ $? -gt 0 ]; then
+	echo "Failed to download Postman tarball"
+	exit
+fi
+'''
+
+def isLatestBuilt = false
+def latestVersion = ''
+
+pipeline {
+    agent any
+	options {
+		ansiColor('xterm')
+		disableConcurrentBuilds()
+		buildDiscarder(logRotator(numToKeepStr: '10'))
+	}
+	triggers {
+        cron('@daily')
+    }
+
+	stages {
+		stage('Version Check') {
+			steps {
+				script {
+					try {
+						def server = Artifactory.newServer url: 'https://someserver/artifactory', credentialsId: 'credentials'
+						server.download("""{"files": [{ "pattern": "ml-data/postman/version.txt", "target": "./" }]}""")
+						latestVersion = sh (returnStdout: true, script: 'filename=$(curl -I -s https://dl.pstmn.io/download/latest/linux64 | grep -o "Postman.*.tar.gz");echo ${filename%%.tar.gz}')
+						lastVersion = sh (returnStdout: true, script: 'cat "/jenkins/jobs/build-postman-ubuntu-deb/workspace/postman/version.txt"')
+						echo "Last version   : ${lastVersion}"
+						echo "latest version : ${latestVersion}"
+						isLatestBuilt = latestVersion.contains(lastVersion)
+					} catch (versionCheckException) {
+						echo "Version check failed, building anyway... Exception : ${versionCheckException}"
+					}
+				}
+			}
+		}
+	    stage('Download') {
+			when {
+				beforeAgent true
+				expression { return !isLatestBuilt }
+			}
+	        steps {
+	            script {
+	                sh "${downloadScript}"
+				}
+	        }
+	    }
+		stage('Build') {
+			when {
+				beforeAgent true
+				expression { return !isLatestBuilt }
+			}
+            steps {
+                script {
+                    sh "${debBuildScript}"
+                }
+            }
+			post {
+				success {
+				    script {
+						currentBuild.displayName = "${currentBuild.displayName} : ${latestVersion}"
+				    }
+				}
+			}
+        }
+
+        stage("Upload") {
+			when {
+				beforeAgent true
+				expression { return !isLatestBuilt }
+			}
+			steps {
+				script {
+				    def buildInfo = Artifactory.newBuildInfo()
+					def server = Artifactory.newServer url: 'https://someserver/artifactory', credentialsId: 'credentials'
+                    buildInfo.name = 'postman'
+                    buildInfo.retention maxBuilds: 20, maxDays: 180, deleteBuildArtifacts: true, async: true
+                    server.upload spec:"""{"files": [
+						{"pattern": "postman*.deb", "target": "postman/"},
+						{"pattern": "version.txt", "target": "postman/"}
+					]}""", buildInfo: buildInfo
+					server.publishBuildInfo buildInfo
+				}
+	        }
+		}
+		stage('Cleanup') {
+		    steps {
+		        script {
+		        	step([$class: 'CordellWalkerRecorder'])
+		            cleanWs()
+		        }
+		    }
+		}
+    }
+}
