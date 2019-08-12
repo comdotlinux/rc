@@ -13,10 +13,43 @@
 [fetch]
 	prune = true
 [alias]
-	lg = log --graph --oneline --decorate
-	lga = log --graph --oneline --decorate --all
-	a = add .
-	cm = commit -m
-	p = push
-	c = commit
+	ge = config --global -e
+	p = pull
+#	pa = "!find ~/Documents/repositories -maxdepth 1 -type d -exec sh -c '[ -d $0/.git ] && git --git-dir=$0/.git --work-tree=$PWD/$0 pull origin master' \{\} \\;"
+	lg = log --color --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit
+  	lg1 = log --color --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit -1
+	co = checkout
+	br = branch
+	brl = branch --list --all
+	bru = remote update origin --prune
+	bp = fetch --all --prune
+	brc = "!git branch --merged >/tmp/merged-branches && echo 'delete branches you want to keep!!!!' && sleep 3 && vim /tmp/merged-branches && xargs git branch -d </tmp/merged-branches"
+	cl = reflog expire --all --expire=now
+	gcpa = gc --prune=now --aggressive
+	c = commit -S
+	ca = commit -S -a
+	com = checkout master
+	unstage = reset HEAD --
+	last = log -1 HEAD
+	publish = "!git push -u origin $(git branch | grep '*' | awk '{print $2}')"
+	cc = config --global -l
+	sl = stash list
 	s = status
+	st = stash
+	sd = stash show -p
+	cpx = cherry-pick -x
+	cpc = cherry-pick --continue
+	cpa = cherry-pick --abort
+  	prl = pr list --format '%pC%>(8)%i%Creset %t% l : %NC Comments %U to %B by %au, (%rs) assigned for review %n'
+  	prl10 = pr list --limit 10 --format '%pC%>(8)%i%Creset %t% l : %NC Comments %U to %B by %au, (%rs) assigned for review %n'
+[filter "lfs"]
+	clean = git-lfs clean -- %f
+	smudge = git-lfs smudge -- %f
+	process = git-lfs filter-process
+	required = true
+[pull]
+	rebase = true
+[diff]
+	guitool = meld
+
+
